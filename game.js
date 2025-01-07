@@ -61,6 +61,8 @@ const bird = {
     },
 
     update(delta) {
+        const lastYPosition = this.y; // Store the bird's position before update
+
         this.currentFrame += delta * 4;
         if (this.currentFrame >= this.frames.length) {
             this.currentFrame = 0;
@@ -81,6 +83,9 @@ const bird = {
                 this.vel = 0;
             }
         }
+
+        // Restore the bird's position to maintain consistency when background changes
+        this.y = lastYPosition;
     },
 
     reset() {
@@ -144,7 +149,6 @@ const backgrounds = {
     map6: 'res/textures/background/map6.png',
     windowex: 'res/textures/background/windowex.png',
     error: 'res/textures/background/error.png'
-    
 };
 
 const backgroundTexture = new Image();
@@ -240,7 +244,6 @@ canvas.addEventListener('click', (e) => {
     }
 });
 
-
 // Update background based on the score, cycling through the maps every 5 points
 function updateBackground() {
     // Create an array of the maps you want to cycle through
@@ -249,24 +252,25 @@ function updateBackground() {
         backgrounds.map1,    // Map 1
         backgrounds.map2,    // Map 2
         backgrounds.windowex, // Special map 1
-        backgrounds.error,     // Special map 2
+        backgrounds.error,    // Special map 2
         backgrounds.map3,    // Map 3
         backgrounds.map4,    // Map 4
         backgrounds.map5,    // Map 5
         backgrounds.map6,    // Map 6
         backgrounds.impossible
-        
     ];
-    
-    
+
     // Calculate the index based on the score divided by 5
     const mapIndex = Math.floor(score / 5) % mapCycle.length;
 
     // Update the background texture
-    backgroundTexture.src = mapCycle[mapIndex];
+    const newBackground = mapCycle[mapIndex];
+
+    // If the new background is different, only update the texture
+    if (backgroundTexture.src !== newBackground) {
+        backgroundTexture.src = newBackground;
+    }
 }
-
-
 
 // Update function
 function update(delta) {
