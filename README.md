@@ -4,7 +4,7 @@
 Scan the QR code below to directly access the game in your browser:
 ![QR Code Placeholder](qr_code_image.png)
 
-> Replace `qr_code_image.png` with your QR code file path.
+> Replace `qr-code.png` with your QR code file path.
 
 ## 🕹️ Game Overview
 In this game, you control a bird that must navigate through an obstacle course of pipes. Your goal is to achieve the highest score by passing through as many pipes as possible without hitting them or the ground.
