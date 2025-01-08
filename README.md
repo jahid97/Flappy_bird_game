@@ -45,7 +45,7 @@ The project is organized as follows:
 3. Open `index.html` in your favorite web browser.
 
 ## 📜 License
-This project is licensed under the [MIT License](LICENSE).
+This project is open to all.
 
 ## 🌟 Acknowledgments
 - Inspired by the original Flappy Bird game by Dong Nguyen.
