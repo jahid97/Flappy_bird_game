@@ -31,7 +31,7 @@ const birdFramesSets = [
 ];
 
 const bird = {
-    y: 200, // Start bird at the middle of the canvas
+    y: 300, // Start bird at the middle of the canvas
     vel: 0,
     currentFrame: 0,
     texture: null,
@@ -84,7 +84,7 @@ const bird = {
     },
 
     reset() {
-        this.y = 200; // Reset bird to the middle of the canvas
+        this.y = 300; // Reset bird to the middle of the canvas
         this.vel = 0;
         this.currentFrame = 0;
 
@@ -260,7 +260,7 @@ function updateBackground() {
     
     
     // Calculate the index based on the score divided by 5
-    const mapIndex = Math.floor(score / 5) % mapCycle.length;
+    const mapIndex = Math.floor(score / 15) % mapCycle.length;
 
     // Update the background texture
     backgroundTexture.src = mapCycle[mapIndex];
