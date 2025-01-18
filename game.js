@@ -11,27 +11,12 @@ let lastTime = 0;
 
 const birdFramesSets = [
     [ // Set 1 of bird frames
-        'res/textures/bird/1-2.png',
-        'res/textures/bird/1-3.png',
-        'res/textures/bird/1-2.png',
-        'res/textures/bird/1-1.png'
-    ],
-    [ // Set 2 of bird frames
-        'res/textures/bird/2-2.png',
-        'res/textures/bird/2-3.png',
-        'res/textures/bird/2-2.png',
-        'res/textures/bird/2-1.png'
-    ],
-    [ // Set 3 of bird frames
-        'res/textures/bird/3-2.png',
-        'res/textures/bird/3-3.png',
-        'res/textures/bird/3-2.png',
-        'res/textures/bird/3-1.png'
+        'res/textures/bird/bees.png'
     ]
 ];
 
 const bird = {
-    y: 300, // Start bird at the middle of the canvas
+    y: 200, // Start bird at the middle of the canvas
     vel: 0,
     currentFrame: 0,
     texture: null,
@@ -84,7 +69,7 @@ const bird = {
     },
 
     reset() {
-        this.y = 300; // Reset bird to the middle of the canvas
+        this.y = 200; // Reset bird to the middle of the canvas
         this.vel = 0;
         this.currentFrame = 0;
 
@@ -119,8 +104,10 @@ const ground = {
     offset: 0,
 
     draw(delta) {
+        // Increase ground speed based on the score
+        let groundSpeed = 100 + Math.min(score * 2, 200); // Ground speed will increase with the score
         if (gameRunning && !gameOvered) {
-            this.offset -= delta * 100;
+            this.offset -= delta * groundSpeed;
             if (this.offset <= -24) {
                 this.offset += 24;
             }
@@ -144,7 +131,6 @@ const backgrounds = {
     map6: 'res/textures/background/map6.png',
     windowxp: 'res/textures/background/windowxp.png',
     error: 'res/textures/background/error.png'
-    
 };
 
 const backgroundTexture = new Image();
@@ -175,6 +161,11 @@ function intersects(rect1, rect2) {
         rect1.y < rect2.y + rect2.height &&
         rect1.y + rect1.height > rect2.y
     );
+}
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;  // Set canvas width to the window's inner width.
+    canvas.height = window.innerHeight; // Set canvas height to the window's inner height.
 }
 
 // Function to draw a pipe
@@ -216,19 +207,25 @@ function drawStartButton() {
     }
 }
 
-// Add an event listener to detect clicks on the start button
-canvas.addEventListener('click', (e) => {
+// Add an event listener to detect clicks or touches on the start button
+canvas.addEventListener('click', handleStartButtonClick);
+canvas.addEventListener('touchstart', handleStartButtonClick);
+// Add event listener for resizing the canvas on window resize.
+window.addEventListener('resize', resizeCanvas);
+
+
+function handleStartButtonClick(e) {
     if (showStartButtonFlag) {
         const rect = canvas.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
+        const clickX = e.clientX ? e.clientX - rect.left : e.touches[0].clientX - rect.left;
+        const clickY = e.clientY ? e.clientY - rect.top : e.touches[0].clientY - rect.top;
 
         const buttonX = canvas.width / 2 - startButtonTexture.width / 2;
         const buttonY = canvas.height / 2 + 100;
         const buttonWidth = startButtonTexture.width;
         const buttonHeight = startButtonTexture.height;
 
-        // Check if the click is within the bounds of the start button
+        // Check if the click/touch is within the bounds of the start button
         if (
             clickX >= buttonX &&
             clickX <= buttonX + buttonWidth &&
@@ -238,8 +235,7 @@ canvas.addEventListener('click', (e) => {
             location.reload(); // Reload the page to restart the game
         }
     }
-});
-
+}
 
 // Update background based on the score, cycling through the maps every 5 points
 function updateBackground() {
@@ -255,26 +251,29 @@ function updateBackground() {
         backgrounds.map5,    // Map 5
         backgrounds.map6,    // Map 6
         backgrounds.impossible
-        
     ];
-    
-    
+
     // Calculate the index based on the score divided by 5
-    const mapIndex = Math.floor(score / 15) % mapCycle.length;
+    const mapIndex = Math.floor(score / 7) % mapCycle.length;
 
     // Update the background texture
     backgroundTexture.src = mapCycle[mapIndex];
+    
+    if (bird.y + bird.texture.height > backgroundTexture.height) {
+        bird.y = backgroundTexture.height - bird.texture.height;
+    }
 }
 
-
-
+// Update function
 // Update function
 function update(delta) {
     bird.update(delta);
 
     if (!gameOvered) {
         pipes.forEach(pipe => {
-            pipe.x -= 100 * delta;
+            // Increase the speed of the pipes based on the score
+            let pipeSpeed = 100 + Math.min(score * 5, 300); // Pipe speed will increase with the score
+            pipe.x -= pipeSpeed * delta;
 
             const birdRect = bird.getRect();
             if (
@@ -330,6 +329,7 @@ function update(delta) {
     }
 }
 
+
 // Draw function
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -374,7 +374,7 @@ function gameLoop(timestamp) {
     }
 }
 
-// Input handling
+// Input handling (for mobile and desktop)
 canvas.addEventListener('mousedown', () => {
     if (!gameRunning) {
         gameRunning = true;
