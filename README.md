@@ -2,7 +2,7 @@
 
 ## 📲 QR Code
 Scan the QR code below to directly access the game in your browser:
-![QR Code](qr-code.png)
+![QR Code](qr-code.png) 
 
 [Play the game here!](https://jahid97.github.io/Flappy_bird_game/)
 
