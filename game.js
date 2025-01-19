@@ -254,7 +254,7 @@ function updateBackground() {
     ];
 
     // Calculate the index based on the score divided by 5
-    const mapIndex = Math.floor(score / 7) % mapCycle.length;
+    const mapIndex = Math.floor(score / 20) % mapCycle.length;
 
     // Update the background texture
     backgroundTexture.src = mapCycle[mapIndex];
