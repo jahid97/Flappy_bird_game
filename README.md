@@ -36,7 +36,7 @@ The project is organized as follows:
 ## 🛠️ How to Run Locally
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/jahid97/Flappy_bird_game.git
    ```
 2. Navigate to the project directory:
    ```bash
