@@ -11,7 +11,10 @@ let lastTime = 0;
 
 const birdFramesSets = [
     [ // Set 1 of bird frames
-        'res/textures/bird/bees.png'
+        'res/textures/bird/2-1.png'
+        'res/textures/bird/2-2.png'
+        'res/textures/bird/2-3.png'
+        'res/textures/bird/2-4.png'
     ]
 ];
 
