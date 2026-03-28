@@ -1,406 +1,521 @@
-// Get the canvas and context
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Variables
+// Game state
 let score = 0;
+let highScore = parseInt(localStorage.getItem('flappyHighScore') || '0');
 let gameRunning = false;
 let gameOvered = false;
-let delta;
+let gameOverSettled = false;
+let delta = 0;
 let lastTime = 0;
 
+// Bird animation frame sets — fixed missing commas
 const birdFramesSets = [
-    [ // Set 1 of bird frames
-        'res/textures/bird/1-2.png',
-        'res/textures/bird/1-3.png',
-        'res/textures/bird/1-2.png',
-        'res/textures/bird/1-1.png'
-    ],
-    [ // Set 2 of bird frames
+    [
+        'res/textures/bird/2-1.png',
         'res/textures/bird/2-2.png',
         'res/textures/bird/2-3.png',
-        'res/textures/bird/2-2.png',
-        'res/textures/bird/2-1.png'
+        'res/textures/bird/2-4.png'
     ],
-    [ // Set 3 of bird frames
+    [
+        'res/textures/bird/1-1.png',
+        'res/textures/bird/1-2.png',
+        'res/textures/bird/1-3.png'
+    ],
+    [
+        'res/textures/bird/3-1.png',
         'res/textures/bird/3-2.png',
-        'res/textures/bird/3-3.png',
-        'res/textures/bird/3-2.png',
-        'res/textures/bird/3-1.png'
+        'res/textures/bird/3-3.png'
     ]
 ];
 
+// ─── Bird ────────────────────────────────────────────────────────────────────
 const bird = {
-    y: 200, // Start bird at the middle of the canvas
+    x: 80,
+    y: 300,
     vel: 0,
     currentFrame: 0,
     texture: null,
     frames: [],
+    hitFlash: 0,
 
     getRect() {
+        const pad = 5;
         return {
-            x: 50,
-            y: this.y,
-            width: this.texture.width,
-            height: this.texture.height
+            x: this.x + pad,
+            y: this.y + pad,
+            width: this.texture.width - pad * 2,
+            height: this.texture.height - pad * 2
         };
     },
 
     flap() {
         if (!gameRunning || gameOvered) return;
-        this.vel = -350; // Adjusted flap velocity to prevent the bird from disappearing
+        this.vel = -360;
+        playSound('wing');
     },
 
     draw() {
-        const rotation = (8 * (this.vel / 400)) * (Math.PI / 180);
+        if (!this.texture) return;
+        const maxAngle = 30 * (Math.PI / 180);
+        const rotation = Math.max(-maxAngle, Math.min(maxAngle, (this.vel / 400) * maxAngle * 2.5));
+
         ctx.save();
-        ctx.translate(50 + this.texture.width / 2, this.y + this.texture.height / 2);
+        ctx.translate(this.x + this.texture.width / 2, this.y + this.texture.height / 2);
         ctx.rotate(rotation);
+
+        // Red flash on hit
+        if (this.hitFlash > 0) {
+            ctx.globalAlpha = 0.6;
+            ctx.filter = 'brightness(5) saturate(0) sepia(1) hue-rotate(-20deg)';
+        }
         ctx.drawImage(this.texture, -this.texture.width / 2, -this.texture.height / 2);
         ctx.restore();
+
+        if (this.hitFlash > 0) this.hitFlash -= delta;
     },
 
     update(delta) {
-        this.currentFrame += delta * 4;
-        if (this.currentFrame >= this.frames.length) {
-            this.currentFrame = 0;
-        }
-        this.texture = this.frames[Math.floor(this.currentFrame)];
+        this.currentFrame += delta * 8;
+        if (this.currentFrame >= this.frames.length) this.currentFrame = 0;
+        if (this.frames.length > 0) this.texture = this.frames[Math.floor(this.currentFrame)];
 
-        if (gameRunning || gameOvered) { // Allow bird to fall even after game is over
-            this.vel += delta * 1200;
+        if (!this.texture) return;
+
+        if (gameRunning || gameOvered) {
+            this.vel += delta * 1150;
             this.y += this.vel * delta;
 
-            // Ensure the bird doesn't go off the screen
             if (this.y < 0) {
                 this.y = 0;
                 this.vel = 0;
             }
-            if (this.y + this.texture.height > backgroundTexture.height) {
-                this.y = backgroundTexture.height - this.texture.height;
+            const groundY = getGroundY();
+            if (this.y + this.texture.height >= groundY) {
+                this.y = groundY - this.texture.height;
                 this.vel = 0;
+                if (gameOvered) gameOverSettled = true;
             }
         }
     },
 
     reset() {
-        this.y = 200; // Reset bird to the middle of the canvas
+        this.y = 300;
         this.vel = 0;
         this.currentFrame = 0;
+        this.hitFlash = 0;
 
         return new Promise((resolve) => {
-            // Select a random bird frame set
-            const randomSetIndex = Math.floor(Math.random() * birdFramesSets.length);
-            const selectedFrameSet = birdFramesSets[randomSetIndex];
-
-            // Load the frames of the selected set
+            const idx = Math.floor(Math.random() * birdFramesSets.length);
             Promise.all(
-                selectedFrameSet.map(src => {
+                birdFramesSets[idx].map(src => {
                     const img = new Image();
                     img.src = src;
-                    return new Promise(resolve => {
-                        img.onload = () => resolve(img);
-                    });
+                    return new Promise(r => { img.onload = () => r(img); img.onerror = () => r(img); });
                 })
-            ).then(loadedFrames => {
-                this.frames = loadedFrames;
-                this.texture = this.frames[0];
-                resolve(); // Resolve once the frames are loaded
+            ).then(frames => {
+                this.frames = frames;
+                this.texture = frames[0];
+                resolve();
             });
         });
     }
 };
 
+// ─── Pipes ───────────────────────────────────────────────────────────────────
 const pipes = [];
-const pipeInterval = 3500; // Time in milliseconds
+const PIPE_GAP = 175;
+const BASE_PIPE_INTERVAL = 2000;
 let lastPipeTime = 0;
 
+function createPipe() {
+    const groundY = getGroundY();
+    const minGapTop = 120;
+    const maxGapTop = groundY - PIPE_GAP - 80;
+    const gapTop = minGapTop + Math.random() * (maxGapTop - minGapTop);
+    const gapBottom = gapTop + PIPE_GAP;
+
+    return {
+        x: canvas.width + 10,
+        gapTop,
+        gapBottom,
+        scored: false,
+
+        getUpperRect() {
+            return { x: this.x, y: 0, width: pipeTexture.width || 52, height: this.gapTop };
+        },
+        getLowerRect() {
+            return { x: this.x, y: this.gapBottom, width: pipeTexture.width || 52, height: canvas.height };
+        },
+
+        draw() {
+            if (!pipeTexture.complete || !pipeTexture.naturalWidth) return;
+
+            // Upper pipe (flip vertically, bottom edge at gapTop)
+            ctx.save();
+            ctx.translate(this.x, this.gapTop);
+            ctx.scale(1, -1);
+            ctx.drawImage(pipeTexture, 0, 0);
+            ctx.restore();
+
+            // Lower pipe (top edge at gapBottom)
+            ctx.drawImage(pipeTexture, this.x, this.gapBottom);
+        }
+    };
+}
+
+// ─── Ground ──────────────────────────────────────────────────────────────────
 const ground = {
     offset: 0,
 
     draw(delta) {
+        if (!groundTexture.complete || !groundTexture.naturalWidth) return;
+        const groundSpeed = 150 + Math.min(score * 3, 250);
+
         if (gameRunning && !gameOvered) {
-            this.offset -= delta * 100;
-            if (this.offset <= -24) {
-                this.offset += 24;
-            }
+            this.offset -= delta * groundSpeed;
+            if (this.offset <= -groundTexture.width) this.offset += groundTexture.width;
         }
 
-        ctx.drawImage(groundTexture, this.offset, backgroundTexture.height);
-        ctx.drawImage(groundTexture, this.offset + groundTexture.width, backgroundTexture.height);
+        const y = getGroundY();
+        for (let x = this.offset; x < canvas.width + groundTexture.width; x += groundTexture.width) {
+            ctx.drawImage(groundTexture, x, y);
+        }
+    },
+
+    reset() {
+        this.offset = 0;
     }
 };
 
-// Textures and assets
+// ─── Textures ─────────────────────────────────────────────────────────────────
 const backgrounds = {
     day: 'res/textures/background/day.png',
     night: 'res/textures/background/night.png',
-    impossible: 'res/textures/background/impossible.png',
     map1: 'res/textures/background/map1.png',
     map2: 'res/textures/background/map2.png',
     map3: 'res/textures/background/map3.png',
     map4: 'res/textures/background/map4.png',
     map5: 'res/textures/background/map5.png',
     map6: 'res/textures/background/map6.png',
-    windowex: 'res/textures/background/windowex.png',
-    error: 'res/textures/background/error.png'
-    
+    windowxp: 'res/textures/background/windowxp.png',
+    error: 'res/textures/background/error.png',
+    impossible: 'res/textures/background/impossible.png'
 };
 
+const mapCycle = [
+    backgrounds.day, backgrounds.map1, backgrounds.map2,
+    backgrounds.windowxp, backgrounds.error, backgrounds.map3,
+    backgrounds.map4, backgrounds.map5, backgrounds.map6,
+    backgrounds.impossible
+];
+
 const backgroundTexture = new Image();
-backgroundTexture.src = backgrounds.day; // Start with 'day' background
+backgroundTexture.src = backgrounds.day;
 
 const groundTexture = new Image();
 groundTexture.src = 'res/textures/ground.png';
 
-const font = 'bold 24px Arial';
-
-// Load pipe texture
 const pipeTexture = new Image();
 pipeTexture.src = 'res/textures/pipe.png';
 
-// Load game over texture
 const gameOverTexture = new Image();
 gameOverTexture.src = 'res/textures/gameover.png';
 
-// Load start button texture
-const startButtonTexture = new Image();
-startButtonTexture.src = 'res/textures/tryagain.png';
+const logoTexture = new Image();
+logoTexture.src = 'res/textures/logo.png';
 
-// Utility functions
-function intersects(rect1, rect2) {
+function getGroundY() {
+    if (backgroundTexture.complete && backgroundTexture.naturalHeight) {
+        return backgroundTexture.naturalHeight;
+    }
+    return canvas.height - (groundTexture.naturalHeight || 112);
+}
+
+// ─── Sound ───────────────────────────────────────────────────────────────────
+let soundEnabled = true;
+const soundBuffers = {};
+
+function loadSound(name, src) {
+    const audio = new Audio(src);
+    audio.preload = 'auto';
+    soundBuffers[name] = audio;
+}
+
+loadSound('wing', 'res/sounds/sfx_wing.wav');
+loadSound('hit', 'res/sounds/sfx_hit.wav');
+loadSound('point', 'res/sounds/sfx_point.wav');
+loadSound('die', 'res/sounds/sfx_die.wav');
+
+function playSound(name) {
+    if (!soundEnabled) return;
+    try {
+        const s = soundBuffers[name];
+        if (!s) return;
+        const clone = s.cloneNode();
+        clone.volume = 0.4;
+        clone.play().catch(() => { });
+    } catch (e) { }
+}
+
+// Synthesized level-up jingle played when the map changes
+function playMapChangeSound() {
+    if (!soundEnabled) return;
+    try {
+        const AudioCtx = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+        const ac = new AudioCtx();
+        // Three ascending notes: C5 → E5 → G5
+        const notes = [523.25, 659.25, 783.99];
+        notes.forEach((freq, i) => {
+            const osc = ac.createOscillator();
+            const gain = ac.createGain();
+            osc.connect(gain);
+            gain.connect(ac.destination);
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            const start = ac.currentTime + i * 0.12;
+            const end = start + 0.18;
+            gain.gain.setValueAtTime(0, start);
+            gain.gain.linearRampToValueAtTime(0.35, start + 0.02);
+            gain.gain.linearRampToValueAtTime(0, end);
+            osc.start(start);
+            osc.stop(end);
+        });
+    } catch (e) { }
+}
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+function intersects(r1, r2) {
     return (
-        rect1.x < rect2.x + rect2.width &&
-        rect1.x + rect1.width > rect2.x &&
-        rect1.y < rect2.y + rect2.height &&
-        rect1.y + rect1.height > rect2.y
+        r1.x < r2.x + r2.width && r1.x + r1.width > r2.x &&
+        r1.y < r2.y + r2.height && r1.y + r1.height > r2.y
     );
 }
 
-// Function to draw a pipe
-function drawPipe(x, y, flipped) {
-    ctx.save();
-    ctx.translate(x, y);
-    if (flipped) {
-        ctx.scale(1, -1); // Flip the image vertically
-        ctx.drawImage(pipeTexture, 0, -pipeTexture.height);
-    } else {
-        ctx.drawImage(pipeTexture, 0, 0);
+let lastMapIndex = 0;
+
+function updateBackground() {
+    const idx = Math.floor(score / 10) % mapCycle.length;
+    if (idx !== lastMapIndex) {
+        lastMapIndex = idx;
+        backgroundTexture.src = mapCycle[idx];
+        playMapChangeSound();
     }
-    ctx.restore();
 }
 
-// Game reset function
+// ─── Score display ────────────────────────────────────────────────────────────
+function drawText(text, x, y, size, fillColor, strokeColor) {
+    ctx.font = `bold ${size}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = size / 10;
+    if (strokeColor) {
+        ctx.strokeStyle = strokeColor;
+        ctx.strokeText(text, x, y);
+    }
+    ctx.fillStyle = fillColor;
+    ctx.fillText(text, x, y);
+    ctx.textAlign = 'left';
+}
+
+function drawScore() {
+    drawText(`${score}`, canvas.width / 2, 65, 52, 'white', '#333');
+}
+
+// ─── Screens ──────────────────────────────────────────────────────────────────
+function drawStartScreen() {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (logoTexture.complete && logoTexture.naturalWidth) {
+        const lx = canvas.width / 2 - logoTexture.width / 2;
+        ctx.drawImage(logoTexture, lx, 130);
+    } else {
+        drawText('FLAPPY BIRD', canvas.width / 2, 200, 36, '#ffe066', '#333');
+    }
+
+    drawText('Tap  /  Click  /  Space  to Start', canvas.width / 2, canvas.height / 2 + 60, 20, 'white', '#333');
+
+    if (highScore > 0) {
+        drawText(`Best: ${highScore}`, canvas.width / 2, canvas.height / 2 + 100, 22, '#ffe066', '#333');
+    }
+}
+
+function drawGameOverScreen() {
+    if (!gameOverSettled) return;
+
+    if (gameOverTexture.complete && gameOverTexture.naturalWidth) {
+        ctx.drawImage(gameOverTexture,
+            canvas.width / 2 - gameOverTexture.width / 2,
+            canvas.height / 2 - 120
+        );
+    } else {
+        drawText('GAME OVER', canvas.width / 2, canvas.height / 2 - 60, 36, '#ff4444', '#333');
+    }
+
+    // Score panel
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    roundRect(ctx, canvas.width / 2 - 110, canvas.height / 2 - 20, 220, 100, 12);
+    ctx.fill();
+
+    drawText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20, 24, 'white');
+    drawText(`Best:  ${highScore}`, canvas.width / 2, canvas.height / 2 + 55, 24, '#ffe066');
+
+    drawText('Tap / Click / Space to Restart', canvas.width / 2, canvas.height / 2 + 125, 18, 'white', '#333');
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
+// ─── Game logic ───────────────────────────────────────────────────────────────
 function resetGame() {
+    score = 0;
     gameRunning = false;
     gameOvered = false;
-    score = 0;
-
-    // Wait for the bird frames to load before resetting the game
-    bird.reset().then(() => {
-        pipes.length = 0;
-    });
+    gameOverSettled = false;
+    pipes.length = 0;
+    lastPipeTime = 0;
+    lastMapIndex = 0;
+    ground.reset();
+    backgroundTexture.src = mapCycle[0];
+    bird.reset();
 }
 
-// Variable to track whether the start button is shown
-let showStartButtonFlag = false;
+function startGame() {
+    gameRunning = true;
+    lastPipeTime = performance.now();
+    pipes.push(createPipe());
+    bird.flap();
+}
 
-// Function to draw the start button
-function drawStartButton() {
-    if (showStartButtonFlag) {
-        ctx.drawImage(
-            startButtonTexture, 
-            canvas.width / 2 - startButtonTexture.width / 2, 
-            canvas.height / 2 + 100 // Position the button below the "Game Over" text
-        );
+function handleInput() {
+    if (!gameRunning && !gameOvered) {
+        startGame();
+    } else if (gameOvered && gameOverSettled) {
+        resetGame();
+    } else if (gameRunning && !gameOvered) {
+        bird.flap();
     }
 }
 
-// Add an event listener to detect clicks on the start button
-canvas.addEventListener('click', (e) => {
-    if (showStartButtonFlag) {
-        const rect = canvas.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
-
-        const buttonX = canvas.width / 2 - startButtonTexture.width / 2;
-        const buttonY = canvas.height / 2 + 100;
-        const buttonWidth = startButtonTexture.width;
-        const buttonHeight = startButtonTexture.height;
-
-        // Check if the click is within the bounds of the start button
-        if (
-            clickX >= buttonX &&
-            clickX <= buttonX + buttonWidth &&
-            clickY >= buttonY &&
-            clickY <= buttonY + buttonHeight
-        ) {
-            location.reload(); // Reload the page to restart the game
-        }
-    }
-});
-
-
-// Update background based on the score, cycling through the maps every 5 points
-function updateBackground() {
-    // Create an array of the maps you want to cycle through
-    const mapCycle = [
-        backgrounds.day,     // Default day map
-        backgrounds.map1,    // Map 1
-        backgrounds.map2,    // Map 2
-        backgrounds.windowex, // Special map 1
-        backgrounds.error,     // Special map 2
-        backgrounds.map3,    // Map 3
-        backgrounds.map4,    // Map 4
-        backgrounds.map5,    // Map 5
-        backgrounds.map6,    // Map 6
-        backgrounds.impossible
-        
-    ];
-    
-    
-    // Calculate the index based on the score divided by 5
-    const mapIndex = Math.floor(score / 5) % mapCycle.length;
-
-    // Update the background texture
-    backgroundTexture.src = mapCycle[mapIndex];
-}
-
-
-
-// Update function
 function update(delta) {
     bird.update(delta);
 
-    if (!gameOvered) {
-        pipes.forEach(pipe => {
-            pipe.x -= 100 * delta;
+    if (gameRunning && !gameOvered) {
+        const pipeSpeed = 150 + Math.min(score * 4, 280);
+        const birdRect = bird.getRect();
 
-            const birdRect = bird.getRect();
+        for (let i = pipes.length - 1; i >= 0; i--) {
+            const pipe = pipes[i];
+            pipe.x -= pipeSpeed * delta;
+
+            // Collision detection
             if (
                 intersects(birdRect, pipe.getUpperRect()) ||
                 intersects(birdRect, pipe.getLowerRect())
             ) {
                 gameOvered = true;
+                bird.hitFlash = 0.4;
+                playSound('hit');
+                setTimeout(() => playSound('die'), 350);
+
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('flappyHighScore', highScore);
+                }
+                break;
             }
 
-            if (pipe.x + pipeTexture.width < birdRect.x && !pipe.scored) {
+            // Score point
+            if (!pipe.scored && pipe.x + (pipeTexture.naturalWidth || 52) < birdRect.x) {
                 pipe.scored = true;
                 score++;
-                updateBackground(); // Update the background when the score changes
-            }
-        });
-
-        // Add new pipes at intervals
-        if (gameRunning && !gameOvered) {
-            if (performance.now() - lastPipeTime > pipeInterval) {
-                lastPipeTime = performance.now();
-
-                const y = 100 + (Math.random() * 5 - 3) * 50;
-                pipes.push({
-                    x: canvas.width,
-                    y: y,
-                    scored: false,
-                    getUpperRect() {
-                        return { x: this.x, y: this.y + 340, width: pipeTexture.width, height: pipeTexture.height };
-                    },
-                    getLowerRect() {
-                        return { x: this.x, y: this.y - 340, width: pipeTexture.width, height: pipeTexture.height };
-                    },
-                    draw() {
-                        drawPipe(this.x, this.y + 340, false); // Upper pipe
-                        drawPipe(this.x, this.y - 340, true);  // Lower pipe
-                    }
-                });
+                playSound('point');
+                updateBackground();
             }
 
-            if (pipes.length > 4) {
-                pipes.shift();
+            // Remove off-screen pipes
+            if (pipe.x + (pipeTexture.naturalWidth || 52) < 0) {
+                pipes.splice(i, 1);
             }
         }
-    } else {
-        // Ensure bird falls to the ground when game is over
-        bird.vel += delta * 1200;
-        bird.y += bird.vel * delta;
 
-        if (bird.y + bird.texture.height >= backgroundTexture.height) {
-            bird.y = backgroundTexture.height - bird.texture.height;
-            bird.vel = 0;
+        // Spawn new pipe
+        const interval = Math.max(1200, BASE_PIPE_INTERVAL - score * 20);
+        if (performance.now() - lastPipeTime > interval) {
+            lastPipeTime = performance.now();
+            pipes.push(createPipe());
         }
     }
 }
 
-// Draw function
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw background
-    ctx.drawImage(backgroundTexture, 0, 0);
+    // Background
+    if (backgroundTexture.complete && backgroundTexture.naturalWidth) {
+        ctx.drawImage(backgroundTexture, 0, 0);
+    } else {
+        ctx.fillStyle = '#70c5ce';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
-    // Draw pipes
-    pipes.forEach(pipe => pipe.draw());
-
-    // Draw ground
+    pipes.forEach(p => p.draw());
     ground.draw(delta);
-
-    // Draw bird
     bird.draw();
 
-    // Draw score
-    ctx.fillStyle = '#000';
-    ctx.font = font;
-    ctx.fillText(`Score: ${score}`, canvas.width / 2 - 40, 30);
-
-    // Draw game over screen if game over
-    if (gameOvered && bird.y + bird.texture.height >= backgroundTexture.height) {
-        ctx.drawImage(gameOverTexture, canvas.width / 2 - gameOverTexture.width / 2, canvas.height / 2 - gameOverTexture.height / 2);
-
-        // Show the start button
-        showStartButtonFlag = true;
-        drawStartButton();
-    }
+    if (gameRunning || gameOvered) drawScore();
+    if (!gameRunning && !gameOvered) drawStartScreen();
+    if (gameOvered) drawGameOverScreen();
 }
 
-// Main game loop
+// ─── Main loop ────────────────────────────────────────────────────────────────
 function gameLoop(timestamp) {
-    delta = (timestamp - lastTime) / 1000;
+    delta = Math.min((timestamp - lastTime) / 1000, 0.05);
     lastTime = timestamp;
 
     update(delta);
     draw();
 
-    if (!gameOvered || bird.y + bird.texture.height < backgroundTexture.height) {
-        requestAnimationFrame(gameLoop);
-    }
+    requestAnimationFrame(gameLoop); // always keep looping
 }
 
-// Input handling
-canvas.addEventListener('mousedown', () => {
-    if (!gameRunning) {
-        gameRunning = true;
-        lastPipeTime = performance.now();
-        pipes.push({
-            x: canvas.width,
-            y: 100 + (Math.random() * 5 - 3) * 50,
-            scored: false,
-            getUpperRect() {
-                return { x: this.x, y: this.y + 340, width: pipeTexture.width, height: pipeTexture.height };
-            },
-            getLowerRect() {
-                return { x: this.x, y: this.y - 340, width: pipeTexture.width, height: pipeTexture.height };
-            },
-            draw() {
-                drawPipe(this.x, this.y + 340, false); // Upper pipe
-                drawPipe(this.x, this.y - 340, true);  // Lower pipe
-            }
-        });
-    } else if (gameOvered) {
-        resetGame();
+// ─── Input ────────────────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', handleInput);
+
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    handleInput();
+}, { passive: false });
+
+document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        handleInput();
     }
-    bird.flap();
 });
 
-// Preload bird frames
+// Sound toggle
+const soundBtn = document.getElementById('soundToggle');
+if (soundBtn) {
+    soundBtn.addEventListener('click', () => {
+        soundEnabled = !soundEnabled;
+        soundBtn.textContent = soundEnabled ? '🔊' : '🔇';
+    });
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
 bird.reset().then(() => {
     requestAnimationFrame(gameLoop);
 });

@@ -2,57 +2,70 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Flappy Bird</title>
     <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            margin: 0;
-            padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
+            background: #1a1a2e;
             overflow: hidden;
+        }
+
+        #gameWrapper {
+            position: relative;
+            width: 450px;
+            height: 800px;
         }
 
         canvas {
             display: block;
-            background: #70c5ce;
+            width: 450px;
+            height: 800px;
+            image-rendering: pixelated;
+        }
+
+        #soundToggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.45);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 22px;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        #soundToggle:hover { background: rgba(0,0,0,0.7); }
+
+        #hint {
+            position: absolute;
+            bottom: 8px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.45);
+            font: 12px Arial;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-
-    <script>
-        // Function to adjust canvas size based on the aspect ratio (450x800)
-        function resizeCanvas() {
-            const canvas = document.getElementById('gameCanvas');
-            const aspectRatio = 450 / 800; // Aspect ratio: 450 width to 800 height
-
-            // Calculate the height based on the window height
-            const windowHeight = window.innerHeight;
-            const calculatedHeight = windowHeight;
-
-            // Calculate the width to maintain the aspect ratio
-            const calculatedWidth = calculatedHeight * aspectRatio;
-
-            // If the calculated width exceeds window width, adjust it based on window width
-            if (calculatedWidth > window.innerWidth) {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerWidth / aspectRatio;
-            } else {
-                canvas.width = calculatedWidth;
-                canvas.height = calculatedHeight;
-            }
-        }
-
-        // Call resizeCanvas to adjust canvas size on load
-        resizeCanvas();
-
-        // Add event listener to resize canvas when the window is resized
-        window.addEventListener('resize', resizeCanvas);
-    </script>
+    <div id="gameWrapper">
+        <canvas id="gameCanvas" width="450" height="800"></canvas>
+        <button id="soundToggle" title="Toggle sound">🔊</button>
+        <div id="hint">Space / Tap to flap</div>
+    </div>
 
     <script src="game.js"></script>
 </body>
